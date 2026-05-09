@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traffic Guard - AI Traffic Intelligence</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #e2e8f0;
+        }
+
+        .video-container {
+            position: relative;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+
+        .bus-lane-overlay {
+            position: absolute;
+            top: 60%;
+            left: 40%;
+            width: 20%;
+            height: 40%;
+            background: rgba(239, 68, 68, 0.2);
+            border: 2px dashed rgba(239, 68, 68, 0.5);
+            pointer-events: none;
+        }
+
+        .log-container::-webkit-scrollbar {
+            width: 4px;
+        }
+        .log-container::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 10px;
+        }
+
+        .animate-pulse-slow {
+            animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <!-- Navbar -->
+    <nav class="border-b border-slate-800 bg-slate-900/50 backdrop-blur-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-indigo-600 rounded-lg shadow-lg shadow-indigo-500/20">
+                    <i class="fas fa-shield-halved text-white"></i>
+                </div>
+                <h1 class="text-xl font-bold tracking-tight text-white">
+                    Traffic <span class="text-indigo-400">Guard</span>
+                </h1>
+            </div>
+            <div class="flex items-center gap-6 text-sm font-medium">
+                <div class="hidden md:flex items-center gap-4 text-slate-400">
+                    <span class="hover:text-white cursor-pointer transition-colors">Dashboard</span>
+                    <span class="hover:text-white cursor-pointer transition-colors">Arsip</span>
+                    <span class="hover:text-white cursor-pointer transition-colors">Laporan</span>
+                </div>
+                <div class="h-6 w-px bg-slate-800"></div>
+                <span class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                    API: Online
+                </span>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto p-4 lg:p-8">
+        
+        <!-- Header Section -->
+        <div class="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <h2 class="text-2xl font-bold text-white">Pusat Kendali Analisis</h2>
+                <p class="text-slate-400 text-sm">Monitor pelanggaran lalu lintas menggunakan YOLOv11m & OCR secara real-time.</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <!-- Input File Tersembunyi -->
+                <input type="file" id="file-input" class="hidden" accept="video/*">
+                <button id="btn-upload" class="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl font-semibold flex items-center gap-2 transition-all shadow-lg shadow-indigo-500/20">
+                    <i class="fas fa-cloud-upload-alt"></i> Unggah Video (POST)
+                </button>
+            </div>
+        </div>
+        
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+                <p class="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Total Kendaraan</p>
+                <div class="flex items-end justify-between">
+                    <h3 id="stat-total" class="text-3xl font-bold">0</h3>
+                    <div class="p-2 bg-blue-500/10 rounded-lg text-blue-400"><i class="fas fa-car-side"></i></div>
+                </div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+                <p class="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Pelanggaran Jalur</p>
+                <div class="flex items-end justify-between">
+                    <h3 id="stat-bus" class="text-3xl font-bold text-red-500">0</h3>
+                    <div class="p-2 bg-red-500/10 rounded-lg text-red-400"><i class="fas fa-road"></i></div>
+                </div>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+                <p class="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Parkir Liar</p>
+                <div class="flex items-end justify-between">
+                    <h3 id="stat-parking" class="text-3xl font-bold text-orange-500">0</h3>
+                    <div class="p-2 bg-orange-500/10 rounded-lg text-orange-400"><i class="fas fa-parking"></i></div>
+                </div>
+            </div>
+            <div id="status-card" class="bg-slate-900 border border-slate-800 p-5 rounded-2xl transition-all">
+                <p class="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Status Arus</p>
+                <div class="flex items-end justify-between">
+                    <h3 id="stat-status" class="text-lg font-bold text-slate-300">STANDBY</h3>
+                    <div id="status-icon-container" class="p-2 bg-slate-800 rounded-lg text-slate-400"><i class="fas fa-wave-square"></i></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <!-- Analysis Engine -->
+            <div class="lg:col-span-2 space-y-6">
+                <div class="video-container aspect-video group border border-slate-800">
+                    
+                    <!-- Upload/Loading Overlay -->
+                    <div id="loading-overlay" class="absolute inset-0 z-20 bg-slate-900/90 flex-col items-center justify-center hidden">
+                        <div class="w-64 bg-slate-800 h-2 rounded-full overflow-hidden mb-4">
+                            <div id="upload-progress" class="bg-indigo-500 h-full w-0 transition-all duration-300"></div>
+                        </div>
+                        <p id="upload-text" class="text-indigo-400 font-mono text-sm animate-pulse">MENGIRIM DATA KE API...</p>
+                    </div>
+
+                    <!-- Video Placeholder -->
+                    <div id="video-placeholder" class="w-full h-full flex flex-col items-center justify-center bg-slate-800/30">
+                        <div class="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center mb-4 border border-slate-700">
+                            <i class="fas fa-video-slash text-slate-600 text-2xl"></i>
+                        </div>
+                        <p class="text-slate-500 font-medium">Belum ada video yang diunggah</p>
+                        <p class="text-slate-600 text-xs mt-1">Gunakan tombol unggah untuk memulai analisis POST</p>
+                    </div>
+
+                    <!-- Canvas -->
+                    <canvas id="analysis-canvas" class="absolute inset-0 w-full h-full hidden"></canvas>
+                    
+                    <!-- ROI Overlay -->
+                    <div id="bus-lane-roi" class="bus-lane-overlay hidden">
+                        <div class="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-red-600 text-[10px] text-white px-2 py-0.5 rounded-t font-bold uppercase">
+                            Zona Busway
+                        </div>
+                    </div>
+
+                    <!-- AI HUD -->
+                    <div id="ai-dashboard" class="absolute bottom-4 left-4 bg-slate-950/90 p-4 rounded-xl border border-slate-800 hidden text-xs font-mono shadow-2xl backdrop-blur-sm min-w-[200px]">
+                        <div class="flex items-center gap-2 text-indigo-400 border-b border-slate-800 pb-2 mb-2">
+                            <i class="fas fa-microchip animate-spin-slow"></i>
+                            <span>TRAFFIC GUARD ENGINE V1.1</span>
+                        </div>
+                        <div class="space-y-1">
+                            <div class="flex justify-between gap-4"><span>COUNT:</span> <span id="ai-overlay-total" class="text-white">0</span></div>
+                            <div class="flex justify-between gap-4"><span>FPS:</span> <span class="text-emerald-400">24.5</span></div>
+                            <div class="flex justify-between gap-4"><span>STREAM:</span> <span id="ai-overlay-status" class="text-emerald-400">ACTIVE</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Info Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="bg-indigo-600/10 border border-indigo-500/20 p-4 rounded-xl">
+                        <h4 class="text-indigo-400 text-sm font-bold flex items-center gap-2 mb-2">
+                            <i class="fas fa-link"></i> Endpoint API
+                        </h4>
+                        <code class="text-[10px] bg-black/40 p-2 rounded block text-slate-300">
+                            POST /v1/traffic/analyze
+                        </code>
+                    </div>
+                    <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+                        <h4 class="text-slate-400 text-sm font-bold flex items-center gap-2 mb-2">
+                            <i class="fas fa-file-code"></i> Payload Form
+                        </h4>
+                        <code class="text-[10px] bg-black/40 p-2 rounded block text-slate-500">
+                            { "file": binary, "options": "full_scan" }
+                        </code>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Side Panels -->
+            <div class="space-y-6">
+                <!-- Log Panel -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl flex flex-col h-[500px]">
+                    <div class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-800/30 rounded-t-2xl">
+                        <h4 class="font-bold text-sm flex items-center gap-2">
+                            <i class="fas fa-list-ul text-indigo-400"></i> Aktivitas Sistem
+                        </h4>
+                        <button id="btn-clear-logs" class="text-[10px] text-slate-500 hover:text-white uppercase transition-colors">Clear</button>
+                    </div>
+                    <div id="log-container" class="p-4 overflow-y-auto space-y-3 log-container flex-1">
+                        <div id="empty-log" class="h-full flex flex-col items-center justify-center text-slate-600 italic text-xs text-center px-4">
+                            <i class="fas fa-terminal mb-2 text-xl"></i>
+                            Menunggu input video untuk memulai pencatatan log...
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Settings/Health -->
+                <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+                    <h4 class="font-bold text-sm mb-4">Parameter Deteksi</h4>
+                    <div class="space-y-4">
+                        <div>
+                            <div class="flex justify-between text-[10px] mb-1">
+                                <span class="text-slate-400">Confidence Threshold</span>
+                                <span class="text-indigo-400">0.25</span>
+                            </div>
+                            <div class="w-full bg-slate-800 h-1.5 rounded-full">
+                                <div class="w-1/4 bg-indigo-500 h-full rounded-full"></div>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-[10px] text-slate-400 uppercase font-bold">OCR Plate Detection</span>
+                            <span class="px-2 py-0.5 bg-emerald-500/20 text-emerald-500 rounded text-[9px]">ENABLED</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-[10px] text-slate-400 uppercase font-bold">Cloud GPU Accel</span>
+                            <span class="px-2 py-0.5 bg-indigo-500/20 text-indigo-500 rounded text-[9px]">T4 ACTIVE</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Toast Notification -->
+    <div id="notification-area" class="fixed bottom-6 right-6 z-50 flex flex-col gap-3"></div>
+
+    <script>
+        // --- State ---
+        let isAnalyzing = false;
+        let vehicleCount = 0;
+        let busViolations = 0;
+        let parkViolations = 0;
+        let simInterval = null;
+
+        // --- Elements ---
+        const fileInput = document.getElementById('file-input');
+        const btnUpload = document.getElementById('btn-upload');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const uploadProgress = document.getElementById('upload-progress');
+        const uploadText = document.getElementById('upload-text');
+        const logContainer = document.getElementById('log-container');
+        const analysisCanvas = document.getElementById('analysis-canvas');
+        const ctx = analysisCanvas.getContext('2d');
+        const videoPlaceholder = document.getElementById('video-placeholder');
+        const busLaneRoi = document.getElementById('bus-lane-roi');
+        const aiHUD = document.getElementById('ai-dashboard');
+
+        // --- Logic: HTTP POST Simulation ---
+        btnUpload.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // Reset state
+            stopAnalysis();
+            
+            // 1. Tampilkan Loading (Simulasi POST Request)
+            loadingOverlay.classList.remove('hidden');
+            loadingOverlay.classList.add('flex');
+            uploadText.innerText = `MENGIRIM: ${file.name.toUpperCase()}...`;
+            
+            // Simulasi Progres Bar (POST ke API)
+            let progress = 0;
+            const uploadSim = setInterval(() => {
+                progress += Math.random() * 15;
+                if (progress >= 100) {
+                    progress = 100;
+                    clearInterval(uploadSim);
+                    
+                    setTimeout(() => {
+                        loadingOverlay.classList.add('hidden');
+                        loadingOverlay.classList.remove('flex');
+                        startAnalysis(file.name);
+                    }, 800);
+                }
+                uploadProgress.style.width = `${progress}%`;
+            }, 200);
+        });
+
+        function startAnalysis(fileName) {
+            isAnalyzing = true;
+            showToast(`API: Video "${fileName}" berhasil diunggah. Mulai deteksi...`, "success");
+            
+            videoPlaceholder.classList.add('hidden');
+            analysisCanvas.classList.remove('hidden');
+            busLaneRoi.classList.remove('hidden');
+            aiHUD.classList.remove('hidden');
+            
+            // Resize canvas
+            analysisCanvas.width = analysisCanvas.offsetWidth;
+            analysisCanvas.height = analysisCanvas.offsetHeight;
+
+            // Reset logs
+            logContainer.innerHTML = '';
+            vehicleCount = 0;
+            busViolations = 0;
+            parkViolations = 0;
+
+            simInterval = setInterval(runAIDetection, 1000);
+        }
+
+        function stopAnalysis() {
+            isAnalyzing = false;
+            clearInterval(simInterval);
+            uploadProgress.style.width = '0%';
+        }
+
+        function runAIDetection() {
+            if (!isAnalyzing) return;
+
+            ctx.clearRect(0, 0, analysisCanvas.width, analysisCanvas.height);
+            
+            // Simulasi deteksi objek secara dinamis
+            const newCount = Math.floor(Math.random() * 20) + 5;
+            vehicleCount = newCount;
+
+            for (let i = 0; i < 5; i++) { // Gambar beberapa box saja untuk visual
+                const x = Math.random() * (analysisCanvas.width - 60);
+                const y = Math.random() * (analysisCanvas.height - 60);
+                const w = 50;
+                const h = 40;
+                
+                let isViolating = (x > analysisCanvas.width * 0.4 && x < analysisCanvas.width * 0.6 && y > analysisCanvas.height * 0.6);
+                let color = isViolating ? '#ef4444' : '#6366f1';
+                
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x, y, w, h);
+                
+                ctx.fillStyle = color;
+                ctx.font = 'bold 10px Inter';
+                ctx.fillText(isViolating ? 'VIOLATION' : 'CAR', x, y - 5);
+
+                if (isViolating && Math.random() > 0.9) {
+                    triggerViolation('BUS', `Pelanggaran Jalur Busway oleh Kendaraan #${Math.floor(Math.random()*9000)}`);
+                }
+            }
+
+            // Simulasi Parkir Liar (Random)
+            if (Math.random() > 0.95) {
+                triggerViolation('PARK', `Deteksi Parkir Liar di Bahu Jalan oleh Mobil #${Math.floor(Math.random()*5000)}`);
+            }
+
+            updateDashboardUI();
+        }
+
+        function triggerViolation(type, msg) {
+            const time = new Date().toLocaleTimeString('id-ID', { hour12: false });
+            if (type === 'BUS') busViolations++;
+            if (type === 'PARK') parkViolations++;
+
+            const div = document.createElement('div');
+            div.className = `p-3 rounded-xl text-[11px] border border-slate-800 ${type==='BUS' ? 'bg-red-500/5' : 'bg-orange-500/5'} animate-fade-in`;
+            div.innerHTML = `
+                <div class="flex justify-between mb-1">
+                    <span class="font-bold ${type==='BUS' ? 'text-red-500' : 'text-orange-500'}">
+                        <i class="fas ${type==='BUS'?'fa-road':'fa-parking'} mr-1"></i> ${type==='BUS'?'JALUR BUSWAY':'PARKIR LIAR'}
+                    </span>
+                    <span class="text-slate-600 font-mono">${time}</span>
+                </div>
+                <p class="text-slate-300">${msg}</p>
+            `;
+            logContainer.prepend(div);
+        }
+
+        function updateDashboardUI() {
+            document.getElementById('stat-total').innerText = vehicleCount;
+            document.getElementById('stat-bus').innerText = busViolations;
+            document.getElementById('stat-parking').innerText = parkViolations;
+            document.getElementById('ai-overlay-total').innerText = vehicleCount;
+
+            const statusLabel = document.getElementById('stat-status');
+            const statusCard = document.getElementById('status-card');
+            const iconCont = document.getElementById('status-icon-container');
+
+            if (vehicleCount > 18) {
+                statusLabel.innerText = "MACET TOTAL";
+                statusLabel.className = "text-lg font-bold text-red-500";
+                statusCard.className = "bg-red-950/20 border border-red-500/30 p-5 rounded-2xl transition-all";
+                iconCont.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+                iconCont.className = "p-2 bg-red-500/10 rounded-lg text-red-400";
+            } else if (vehicleCount > 10) {
+                statusLabel.innerText = "PADAT MERAYAP";
+                statusLabel.className = "text-lg font-bold text-orange-400";
+                statusCard.className = "bg-orange-950/20 border border-orange-500/30 p-5 rounded-2xl transition-all";
+                iconCont.innerHTML = '<i class="fas fa-align-center"></i>';
+                iconCont.className = "p-2 bg-orange-500/10 rounded-lg text-orange-400";
+            } else {
+                statusLabel.innerText = "LANCAR";
+                statusLabel.className = "text-lg font-bold text-emerald-400";
+                statusCard.className = "bg-emerald-950/20 border border-emerald-500/30 p-5 rounded-2xl transition-all";
+                iconCont.innerHTML = '<i class="fas fa-check-circle"></i>';
+                iconCont.className = "p-2 bg-emerald-500/10 rounded-lg text-emerald-400";
+            }
+        }
+
+        function showToast(msg, type) {
+            const toast = document.createElement('div');
+            const color = type === 'success' ? 'bg-indigo-600' : 'bg-red-600';
+            toast.className = `${color} text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 text-xs font-bold animate-bounce-in`;
+            toast.innerHTML = `<i class="fas fa-bell"></i> <span>${msg}</span>`;
+            document.getElementById('notification-area').appendChild(toast);
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-x-10', 'transition-all', 'duration-500');
+                setTimeout(() => toast.remove(), 500);
+            }, 4000);
+        }
+
+        document.getElementById('btn-clear-logs').addEventListener('click', () => {
+            logContainer.innerHTML = '<div class="h-full flex flex-col items-center justify-center text-slate-600 italic text-xs text-center px-4"><i class="fas fa-terminal mb-2 text-xl"></i>Log dibersihkan...</div>';
+            busViolations = 0;
+            parkViolations = 0;
+            updateDashboardUI();
+        });
+
+        window.addEventListener('resize', () => {
+            if (isAnalyzing) {
+                analysisCanvas.width = analysisCanvas.offsetWidth;
+                analysisCanvas.height = analysisCanvas.offsetHeight;
+            }
+        });
+    </script>
+
+    <style>
+        @keyframes bounce-in {
+            0% { transform: scale(0.8) translateY(20px); opacity: 0; }
+            70% { transform: scale(1.05); }
+            100% { transform: scale(1) translateY(0); opacity: 1; }
+        }
+        .animate-bounce-in { animation: bounce-in 0.4s ease-out; }
+        
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(-5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in { animation: fade-in 0.3s ease-out; }
+
+        .animate-spin-slow { animation: spin 4s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    </style>
+</body>
+</html>
